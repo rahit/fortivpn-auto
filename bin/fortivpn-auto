@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+#
+# fortivpn-auto — single entrypoint. Dispatches to the lib/ command scripts.
+# Works both from a git clone (./bin/fortivpn-auto …) and from a Homebrew
+# install (symlinked onto PATH → resolves back to its libexec prefix).
+
+set -euo pipefail
+
+# Resolve this script's real directory, following symlinks (BSD-readlink safe —
+# macOS readlink has no -f). Homebrew symlinks bin/ → libexec/bin, so we must
+# deref to find lib/, Spoons/, presets/ as siblings of the real location.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in /*) ;; *) SOURCE="$DIR/$SOURCE" ;; esac
+done
+BIN_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+FVA_ROOT="$(cd "$BIN_DIR/.." && pwd)"
+export FVA_ROOT
+
+usage() {
+  cat >&2 <<'EOF'
+fortivpn-auto — auto-connect a SAML FortiGate SSL-VPN on macOS by Wi-Fi SSID
+
+usage: fortivpn-auto <command> [options]
+
+commands:
+  install [--preset NAME | --config PATH] [--no-agent]
+                      install/refresh on this Mac (config, Spoon, sudoers, agent)
+  doctor [--dry-run]  read-only health check (+ reachability probe)
+  refresh-cert        re-pin the gateway cert after it rotates
+  uninstall [--yes]   reverse the install
+  version             print version
+  help                this help
+
+examples:
+  fortivpn-auto install --preset ucalgary
+  fortivpn-auto doctor --dry-run
+EOF
+}
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift || true
+
+case "$cmd" in
+  install)               exec "$FVA_ROOT/lib/install.sh" "$@" ;;
+  doctor)                exec "$FVA_ROOT/lib/doctor.sh" "$@" ;;
+  uninstall)             exec "$FVA_ROOT/lib/uninstall.sh" "$@" ;;
+  refresh-cert|refresh)  exec "$FVA_ROOT/lib/refresh-cert.sh" "$@" ;;
+  version|-v|--version)  ( . "$FVA_ROOT/lib/common.sh"; printf 'fortivpn-auto %s\n' "$FVA_VERSION" ) ;;
+  help|-h|--help)        usage ;;
+  *) printf 'unknown command: %s\n\n' "$cmd" >&2; usage; exit 1 ;;
+esac

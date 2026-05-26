@@ -3,13 +3,13 @@
 # uninstall.sh — reverse what install.sh did. Prompts before anything
 # destructive. Leaves Homebrew formulae alone unless you opt in.
 #
-#   ./uninstall.sh            interactive
-#   ./uninstall.sh --yes      assume yes to file removals (keeps brew formulae)
+#   fortivpn-auto uninstall          interactive
+#   fortivpn-auto uninstall --yes    assume yes to file removals (keeps brew formulae)
 
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "$HERE/lib/common.sh"
+ROOT="${FVA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source=common.sh
+source "$ROOT/lib/common.sh"
 
 ASSUME_YES=0
 [ "${1:-}" = "--yes" ] && ASSUME_YES=1

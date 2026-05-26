@@ -3,13 +3,13 @@
 # doctor.sh — read-only diagnostics for fortivpn-auto. Changes nothing.
 # Reports every known failure mode in plain language.
 #
-#   ./doctor.sh             health check
-#   ./doctor.sh --dry-run   + gateway reachability & captive-portal probe (no VPN dial)
+#   fortivpn-auto doctor             health check
+#   fortivpn-auto doctor --dry-run   + gateway reachability & captive-portal probe (no dial)
 
 set -uo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "$HERE/lib/common.sh"
+ROOT="${FVA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source=common.sh
+source "$ROOT/lib/common.sh"
 
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
@@ -19,13 +19,13 @@ pass()  { ok "$*";   PASS=$((PASS+1)); }
 flag()  { warn "$*"; WARNS=$((WARNS+1)); }
 bad()   { err "$*";  FAILS=$((FAILS+1)); }
 
-# Honor an OPENFORTIVPN_BIN override if a vpn.conf is sitting here.
+# Honor an OPENFORTIVPN_BIN override if a vpn.conf is in the current directory.
 OVERRIDE=""
-if [ -f "$HERE/vpn.conf" ]; then
-  OVERRIDE="$( ( source "$HERE/vpn.conf" 2>/dev/null; printf '%s' "${OPENFORTIVPN_BIN:-}" ) || true )"
+if [ -f "vpn.conf" ]; then
+  OVERRIDE="$( ( source "vpn.conf" 2>/dev/null; printf '%s' "${OPENFORTIVPN_BIN:-}" ) || true )"
 fi
 
-cfg_get() { grep -E "^$1[[:space:]]*=" "$OFV_CONFIG" 2>/dev/null | head -1 | sed -E "s/^$1[[:space:]]*=[[:space:]]*//"; }
+cfg_get() { grep -E "^$1[[:space:]]*=" "$OFV_CONFIG" 2>/dev/null | head -1 | sed -E "s/^$1[[:space:]]*=[[:space:]]*//;s/[[:space:]]+\$//"; }
 
 banner
 say "doctor — read-only health check"

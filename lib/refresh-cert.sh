@@ -6,14 +6,14 @@
 # updates the pin in ~/.config/openfortivpn/config (after a backup).
 
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "$HERE/lib/common.sh"
+ROOT="${FVA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source=common.sh
+source "$ROOT/lib/common.sh"
 
 banner
-[ -f "$OFV_CONFIG" ] || die "no config at $OFV_CONFIG — run ./install.sh first."
+[ -f "$OFV_CONFIG" ] || die "no config at $OFV_CONFIG — run: fortivpn-auto install"
 
-field() { grep -E "^$1[[:space:]]*=" "$OFV_CONFIG" | head -1 | sed -E "s/^$1[[:space:]]*=[[:space:]]*//"; }
+field() { grep -E "^$1[[:space:]]*=" "$OFV_CONFIG" | head -1 | sed -E "s/^$1[[:space:]]*=[[:space:]]*//;s/[[:space:]]+\$//"; }
 HOST="$(field host)"; PORT="$(field port)"; PINNED="$(field trusted-cert)"
 [ -n "$HOST" ] && [ -n "$PORT" ] || die "config is missing host/port."
 

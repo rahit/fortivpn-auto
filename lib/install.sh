@@ -4,18 +4,17 @@
 # safe to re-run; backs up (never overwrites) your openfortivpn config and
 # Hammerspoon init.lua; installs sudoers only via validated visudo.
 #
-# Usage:
-#   cp vpn.conf.example vpn.conf && $EDITOR vpn.conf && ./install.sh
-#   ./install.sh --preset ucalgary
-#   ./install.sh --config /path/to/vpn.conf [--no-agent]
+# Usage (via the dispatcher):
+#   fortivpn-auto install --preset ucalgary
+#   fortivpn-auto install --config /path/to/vpn.conf [--no-agent]
 
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "$HERE/lib/common.sh"
+ROOT="${FVA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source=common.sh
+source "$ROOT/lib/common.sh"
 
 INSTALL_AGENT=1
-CONFIG_PATH="$HERE/vpn.conf"
+CONFIG_PATH="vpn.conf"
 
 usage() {
   cat >&2 <<EOF
@@ -31,7 +30,7 @@ EOF
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --preset) [ $# -ge 2 ] || die "--preset needs a name"; CONFIG_PATH="$HERE/presets/$2.conf"; shift 2 ;;
+    --preset) [ $# -ge 2 ] || die "--preset needs a name"; CONFIG_PATH="$ROOT/presets/$2.conf"; shift 2 ;;
     --config) [ $# -ge 2 ] || die "--config needs a path"; CONFIG_PATH="$2"; shift 2 ;;
     --no-agent) INSTALL_AGENT=0; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -84,7 +83,7 @@ if [ -n "$TRUSTED_CERT" ]; then
   ok "using cert digest pinned in config"
 else
   spin_capture DIGEST "fetching live cert from $GATEWAY_HOST:$GATEWAY_PORT…" \
-    fetch_live_cert "$GATEWAY_HOST" "$GATEWAY_PORT"
+    fetch_live_cert "$GATEWAY_HOST" "$GATEWAY_PORT" || true
   [ -n "$DIGEST" ] || die "Could not retrieve the gateway certificate (no network, or a captive portal is in the way). Refusing to continue without a pin — we never use --insecure-ssl."
   ok "pinned live cert: $DIGEST"
 fi
@@ -108,7 +107,7 @@ ok "wrote $OFV_CONFIG (chmod 600)"
 step "installing Hammerspoon Spoon"
 mkdir -p "$HS_DIR/Spoons"
 rm -rf "$SPOON_DST"
-cp -R "$HERE/Spoons/$SPOON_NAME.spoon" "$SPOON_DST"
+cp -R "$ROOT/Spoons/$SPOON_NAME.spoon" "$SPOON_DST"
 ok "installed Spoon -> $SPOON_DST"
 
 # ── 7. init.lua loader block (sentinel-guarded, backed up, idempotent) ───────
@@ -136,6 +135,9 @@ ok "wired loader into $HS_INIT (managed block)"
 
 # ── 8. sudoers (validated install, never raw cp) ─────────────────────────────
 step "installing scoped sudoers grant"
+if [[ "$BIN" == *" "* || "$OFV_CONFIG" == *" "* ]]; then
+  die "a space in the openfortivpn path or config path can't be safely argument-matched in sudoers ($BIN | $OFV_CONFIG). Use a space-free path (set OPENFORTIVPN_BIN)."
+fi
 SUDO_USER_NAME="$(id -un)"
 RULE="$SUDO_USER_NAME ALL=(root) NOPASSWD: $BIN -c $OFV_CONFIG --saml-login"
 SUDOERS_TMP="$(mktemp "${TMPDIR:-/tmp}/fortivpn-auto.sudoers.XXXXXX")"

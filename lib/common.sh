@@ -4,6 +4,7 @@
 
 # ── Identity / paths ─────────────────────────────────────────────────────────
 APP_NAME="fortivpn-auto"
+FVA_VERSION="1.0.0"
 LA_LABEL="io.github.rahit.fortivpn-auto"
 SPOON_NAME="FortiVPNAuto"
 
@@ -20,7 +21,7 @@ SUDOERS_FILE="/etc/sudoers.d/fortivpn-auto"
 PLIST="$HOME/Library/LaunchAgents/$LA_LABEL.plist"
 LOG_FILE="$HOME/Library/Logs/fortivpn-auto.log"
 
-HS_BLOCK_BEGIN="-- >>> fortivpn-auto (managed — do not edit between markers) >>>"
+HS_BLOCK_BEGIN="-- >>> fortivpn-auto (managed -- do not edit between markers) >>>"
 HS_BLOCK_END="-- <<< fortivpn-auto (managed) <<<"
 
 # ── Logging (to stderr, so command substitution of helpers stays clean) ──────
@@ -69,6 +70,9 @@ ver_ge_1_21() {
 # ── Cert pinning ─────────────────────────────────────────────────────────────
 # Live SHA-256 fingerprint of the gateway cert: lowercase, colons stripped.
 fetch_live_cert() {
+  # Bound the TLS handshake: a filtered port would otherwise hang s_client for
+  # ~75s (BSD openssl has no -timeout). nc gives us a 5s reachability cap first.
+  /usr/bin/nc -z -G 5 "$1" "$2" 2>/dev/null || return 1
   echo | openssl s_client -connect "$1:$2" -servername "$1" 2>/dev/null \
     | openssl x509 -noout -fingerprint -sha256 2>/dev/null \
     | awk -F= 'NF==2 {gsub(":","",$2); print tolower($2)}'
@@ -77,7 +81,7 @@ fetch_live_cert() {
 # ── Config ───────────────────────────────────────────────────────────────────
 load_config() {
   local f="$1"
-  [ -f "$f" ] || die "config not found: $f  (run: cp vpn.conf.example vpn.conf  — or use --preset NAME)"
+  [ -f "$f" ] || die "config not found: $f  — use 'fortivpn-auto install --preset NAME' or '--config PATH' (template: $ROOT/vpn.conf.example)"
   # Pre-declare so `set -u` is safe even if the file omits optionals.
   TRUSTED_SSIDS=(); TRUSTED_CERT=""; OPENFORTIVPN_BIN=""; REALM=""
   START_DELAY=""; RETRY_DELAY=""; MAX_RETRIES=""
@@ -148,7 +152,7 @@ step() {
 # Falls back to a plain run when stderr isn't a TTY.
 spin_capture() {
   local __var="$1" __msg="$2"; shift 2
-  local __out; __out="$(mktemp)"
+  local __out __ec=0; __out="$(mktemp)"
   if [ -t 2 ]; then
     "$@" >"$__out" 2>/dev/null &
     local __pid=$! i=0
@@ -157,13 +161,14 @@ spin_capture() {
       printf '\r%s%s%s %s' "$C_CYN" "${frames[i++ % 10]}" "$C_NC" "$__msg" >&2
       sleep 0.08
     done
-    wait "$__pid" 2>/dev/null
+    wait "$__pid"; __ec=$?
     printf '\r\033[K' >&2
   else
-    "$@" >"$__out" 2>/dev/null || true
+    "$@" >"$__out" 2>/dev/null || __ec=$?
   fi
   printf -v "$__var" '%s' "$(cat "$__out")"
   rm -f "$__out"
+  return "$__ec"
 }
 
 # Stacked colour bar for the doctor summary: $1 ok, $2 warn, $3 fail.

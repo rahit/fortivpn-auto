@@ -108,7 +108,7 @@ function obj:_updateMenubar()
     { title = "Force connect",    fn = function() self:_forceConnect() end },
     { title = "Force disconnect", fn = function() self:_disconnect("manual") end },
     { title = "-" },
-    { title = "Show log",      fn = function() hs.execute("open -a Console '" .. self.logFile .. "'") end },
+    { title = "Show log",      fn = function() hs.task.new("/usr/bin/open", nil, { "-a", "Console", self.logFile }):start() end },
     { title = "Reload config", fn = function() hs.reload() end },
   })
 end
@@ -143,6 +143,8 @@ end
 function obj:_startVpnTask()
   self:_setState("connecting")
   self:_log("launching: sudo -n " .. self.binPath .. " -c " .. self.configPath .. " --saml-login")
+  self._taskGen = (self._taskGen or 0) + 1
+  local gen = self._taskGen   -- identity of THIS task; lets a stale exitCb no-op
   local samlOpened = false
 
   local function streamCb(_, stdout, stderr)
@@ -176,6 +178,7 @@ function obj:_startVpnTask()
   end
 
   local function exitCb(exitCode, _, _)
+    if gen ~= self._taskGen then return end  -- superseded (e.g. force-reconnect) — ignore this exit
     self:_log(string.format("openfortivpn exited (code=%d)", exitCode or -1))
     self._vpnTask = nil
     if self._state == "connected" then
@@ -258,7 +261,7 @@ function obj:start()
   for _, s in ipairs(self.trustedSSIDs) do self._trusted[s] = true end
 
   self._state = "idle"; self._vpnTask = nil; self._retryCount = 0
-  self._startTimer = nil; self._retryTimer = nil
+  self._startTimer = nil; self._retryTimer = nil; self._taskGen = 0
 
   -- macOS 14+ gates Wi-Fi SSID reads behind Location Services. Trigger the
   -- authorization prompt once; without it hs.wifi.currentNetwork() returns nil.
@@ -285,6 +288,7 @@ function obj:stop()
   if self._vpnTask then self._vpnTask:terminate(); self._vpnTask = nil end
   if self._menubar then self._menubar:delete(); self._menubar = nil end
   self:_log("== " .. self.name .. " stopped ==")
+  if self._logHandle then self._logHandle:close(); self._logHandle = nil end
   return self
 end
 

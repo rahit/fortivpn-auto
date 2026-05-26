@@ -22,17 +22,22 @@ your first request leaks in the clear, fumble open FortiClient, click through a
 GUI that breaks every macOS update. **Nah.** This watches your SSID and handles
 it for you:
 
-```
-   you join "CoffeeShop_Free_WiFi"
-            │
-            ▼
-   ┌──────────────────────┐   trusted SSID?  ──yes──▶  chill, tunnel stays down 🏛
-   │  Hammerspoon watcher  │
-   └──────────────────────┘   nope ──▶ captive-portal check ──▶ openfortivpn --saml-login
-                                                                      │
-                              browser pops → SSO + MFA → cookie ──────┘
-                                                                      ▼
-                                                            tunnel up. you're cooked-proof ✓
+```mermaid
+flowchart TD
+    Join([Join Wi-Fi network]) --> Watcher[Hammerspoon Watcher]
+    Watcher --> Check{SSID Trusted?}
+    
+    Check -- Yes --> Chill[🏛 Chill, tunnel stays down]
+    Check -- No --> Portal[Captive-Portal Check]
+    
+    Portal --> Dial[openfortivpn --saml-login]
+    Dial --> Auth[Browser pops ➜ SSO + MFA]
+    Auth -->|SAML Cookie| Up[⚡ Tunnel up. Cooked-proof ✓]
+
+    style Join fill:#2dd4bf,stroke:#0d9488,stroke-width:2px,color:#0f172a
+    style Chill fill:#64748b,stroke:#475569,stroke-width:1px,color:#ffffff
+    style Up fill:#22c55e,stroke:#16a34a,stroke-width:2px,color:#ffffff
+    style Check fill:#f59e0b,stroke:#d97706,stroke-width:1px,color:#0f172a
 ```
 
 - 📞 **the dial:** [`openfortivpn`](https://github.com/adrienverge/openfortivpn) (`--saml-login`) — a protocol client, not a GUI we have to puppet.
@@ -53,18 +58,30 @@ it for you:
 ## 🚀 install (it's two lines fr)
 
 ```bash
-git clone https://github.com/rahit/fortivpn-auto.git
-cd fortivpn-auto
-./install.sh --preset ucalgary      # UCalgary squad
+brew install rahit/tap/fortivpn-auto
+fortivpn-auto install --preset ucalgary      # UCalgary squad
 ```
+
+`brew` pulls `openfortivpn` + the Hammerspoon cask for you. The `install` step
+does the per-Mac wiring a formula can't (config, Spoon, scoped sudoers,
+LaunchAgent) — it needs `sudo` and your gateway details, so it's its own step.
 
 Not at UCalgary? Bring your own gateway:
 
 ```bash
-cp vpn.conf.example vpn.conf
-$EDITOR vpn.conf                     # GATEWAY_HOST, GATEWAY_PORT, TRUSTED_SSIDS
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/rahit/fortivpn-auto/main/vpn.conf.example -o ~/vpn.conf
+$EDITOR ~/vpn.conf                            # GATEWAY_HOST, GATEWAY_PORT, TRUSTED_SSIDS
+fortivpn-auto install --config ~/vpn.conf
 ```
+
+<details><summary>prefer to run from source (audit-first)?</summary>
+
+```bash
+git clone https://github.com/rahit/fortivpn-auto.git
+cd fortivpn-auto
+./bin/fortivpn-auto install --preset ucalgary
+```
+</details>
 
 The installer is **idempotent** ♻️ (re-run it all day, nothing breaks) and
 **allergic to clobbering your stuff**:
@@ -105,8 +122,8 @@ that's the whole gotcha.
 ## 🩺 is it cooked? (verify + test)
 
 ```bash
-./doctor.sh             # read-only health check, green/yellow/red on every part
-./doctor.sh --dry-run   # + gateway reachability & captive-portal probe (no dial)
+fortivpn-auto doctor             # read-only health check, green/yellow/red on every part
+fortivpn-auto doctor --dry-run   # + gateway reachability & captive-portal probe (no dial)
 ```
 
 `doctor` literally draws you a results bar 📊 so you know at a glance. Then the
@@ -145,7 +162,7 @@ FortiGate EV certs renew annually. When that drops, the next connect fails with
 *Gateway certificate validation failed* (you'll get a notification too):
 
 ```bash
-./refresh-cert.sh      # grabs the live digest, re-pins after you confirm
+fortivpn-auto refresh-cert      # grabs the live digest, re-pins after you confirm
 ```
 
 We **never** fall back to `--insecure-ssl`. That disables cert validation
@@ -169,7 +186,7 @@ honestly in System Settings → General → Login Items.
 - 📍 **menubar stuck on `VPN ⏸`, log spams `SSID is nil`** → Location Services not
   granted. see [the manual bit](#-the-manual-bit-macos-wont-let-a-script-click-these-sorry). `doctor` flags this for you.
 - 🔑 **`sudo` keeps asking for a password on connect** → the sudoers path doesn't
-  match your `openfortivpn`. re-run `./install.sh`, it auto-detects the real one.
+  match your `openfortivpn`. re-run `fortivpn-auto install`, it auto-detects the real one.
 - 🌐 **browser never opens for SSO** → grab the URL from the log (search `saml`)
   and open it by hand; check your default-browser binding.
 - 🧭 **tunnel's up but internal sites won't load** → split-DNS. peek at
@@ -183,7 +200,7 @@ honestly in System Settings → General → Login Items.
 ## 🧹 uninstall (no hard feelings)
 
 ```bash
-./uninstall.sh         # reverses everything, asks before the destructive stuff
+fortivpn-auto uninstall         # reverses everything, asks before the destructive stuff
 ```
 
 Removes the LaunchAgent, the managed init.lua block, the Spoon, and the sudoers
@@ -211,8 +228,8 @@ Bug, or a gateway quirk on your campus? **Open an issue** with: your macOS
 version, `openfortivpn --version`, and the relevant `~/Library/Logs/fortivpn-auto.log`
 lines (scrub anything private). 🐛
 
-**PRs welcome** 🙌 — keep it bash + Lua, and before you push: `bash -n *.sh` and
-`./doctor.sh` should be happy. Adding your school? Drop a
+**PRs welcome** 🙌 — keep it bash + Lua, and before you push: `bash -n bin/* lib/*.sh`
+and `./bin/fortivpn-auto doctor` should be happy. Adding your school? Drop a
 `presets/<school>.conf` and we'll merge it. 🎓
 
 ---
