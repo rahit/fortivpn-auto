@@ -1,0 +1,42 @@
+# fortivpn-auto configuration  (shell-sourced — keep it valid bash)
+#
+# Copy to ./vpn.conf and edit, OR start from a preset:
+#     cp presets/ucalgary.conf vpn.conf
+#     ./install.sh
+#
+# vpn.conf is gitignored so your gateway/SSID set never gets committed.
+
+# ── Required ────────────────────────────────────────────────────────────────
+
+# FortiGate SSL-VPN gateway (no scheme, no port here).
+GATEWAY_HOST="vpn.example.edu"
+
+# SSL-VPN port — almost always 10443 for FortiGate.
+GATEWAY_PORT="10443"
+
+# SSIDs on which the VPN should NOT connect (your home / on-campus secure net).
+# Joining ANY other Wi-Fi triggers an auto-connect; returning to one of these
+# tears the tunnel down. Bash array — quote each, space-separated.
+TRUSTED_SSIDS=("eduroam" "my-home-wifi")
+
+# ── Optional ────────────────────────────────────────────────────────────────
+
+# Pin the gateway's SSL cert (SHA-256, lowercase, no colons). Leave EMPTY to
+# fetch + pin the live cert at install time (recommended — trust-on-first-use).
+# install.sh / refresh-cert.sh manage this; openfortivpn validates against it
+# instead of the system trust store. We never fall back to --insecure-ssl.
+TRUSTED_CERT=""
+
+# Override the openfortivpn binary path. Leave EMPTY to auto-detect via
+# `command -v openfortivpn` (handles Homebrew arm64 /opt/homebrew, Intel
+# /usr/local, and MacPorts /opt/local).
+OPENFORTIVPN_BIN=""
+
+# Some FortiGates require a SAML realm segment. Leave EMPTY unless your IT
+# tells you the login path is /remote/saml/start?realm=<name>.
+REALM=""
+
+# State-machine tuning (seconds / count). Defaults are sane; uncomment to change.
+# START_DELAY=3      # wait after SSID change before acting (DHCP settle)
+# RETRY_DELAY=30     # wait between connect retries
+# MAX_RETRIES=3      # give up after this many, until next network change

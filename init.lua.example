@@ -1,0 +1,17 @@
+-- Example ~/.hammerspoon/init.lua usage.
+--
+-- install.sh appends an equivalent block (between managed markers) to your
+-- real init.lua, so you normally don't touch this. It's here for reference, or
+-- if you'd rather wire it up by hand. The Spoon must live at
+-- ~/.hammerspoon/Spoons/FortiVPNAuto.spoon/ (install.sh puts it there).
+
+hs.loadSpoon("FortiVPNAuto")
+
+spoon.FortiVPNAuto:configure({
+  trustedSSIDs = { "airuc-secure" },                 -- your home/secure SSIDs
+  binPath      = "/opt/homebrew/bin/openfortivpn",   -- `which openfortivpn`
+  -- configPath = "~/.config/openfortivpn/config",   -- default; rarely changed
+  -- maxRetries = 3, retryDelay = 30, startDelay = 3,
+})
+
+spoon.FortiVPNAuto:start()

@@ -1,0 +1,14 @@
+# Local user config — never commit a real gateway/cert/SSID set
+vpn.conf
+
+# Backups created by install.sh / refresh-cert.sh
+*.bak
+*.bak.*
+
+# macOS cruft
+.DS_Store
+
+# Editor noise
+*.swp
+.idea/
+.vscode/
