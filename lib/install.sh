@@ -99,6 +99,10 @@ B="$(backup_file "$OFV_CONFIG" || true)"
   echo "port = $GATEWAY_PORT"
   echo "trusted-cert = $DIGEST"
   [ -n "$REALM" ] && echo "realm = $REALM"
+  case "$PERSISTENT_RECONNECT" in
+    ''|0|*[!0-9]*) ;;                                  # off / non-numeric → omit
+    *) echo "persistent = $PERSISTENT_RECONNECT" ;;    # reconnect loop (reuses cookie)
+  esac
 } > "$OFV_CONFIG"
 chmod 600 "$OFV_CONFIG"
 ok "wrote $OFV_CONFIG (chmod 600)"
@@ -119,14 +123,20 @@ if [ -f "$HS_INIT" ]; then
 fi
 remove_hs_block   # drop any prior managed block so re-runs don't stack
 SSID_LUA="$(lua_ssid_table "${TRUSTED_SSIDS[@]}")"
+KA_INT="$KEEPALIVE_INTERVAL"; case "$KA_INT" in ''|*[!0-9]*) KA_INT=0 ;; esac
+KA_HOST_ESC="${KEEPALIVE_HOST//\\/\\\\}"; KA_HOST_ESC="${KA_HOST_ESC//\"/\\\"}"
+RG_VAL="$RECONNECT_GRACE"; case "$RG_VAL" in ''|0|*[!0-9]*) RG_VAL=180 ;; esac
 {
   [ -f "$HS_INIT" ] && echo ""
   echo "$HS_BLOCK_BEGIN"
   echo 'hs.loadSpoon("FortiVPNAuto")'
   echo 'spoon.FortiVPNAuto:configure({'
-  echo "  trustedSSIDs = $SSID_LUA,"
-  echo "  binPath      = \"$BIN\","
-  echo "  configPath   = \"$OFV_CONFIG\","
+  echo "  trustedSSIDs      = $SSID_LUA,"
+  echo "  binPath           = \"$BIN\","
+  echo "  configPath        = \"$OFV_CONFIG\","
+  echo "  keepaliveInterval = $KA_INT,"
+  echo "  keepaliveHost     = \"$KA_HOST_ESC\","
+  echo "  reconnectGrace    = $RG_VAL,"
   echo '})'
   echo 'spoon.FortiVPNAuto:start()'
   echo "$HS_BLOCK_END"

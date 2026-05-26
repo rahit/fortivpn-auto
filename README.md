@@ -152,6 +152,9 @@ Back on home Wi-Fi → `VPN 🏛`, tunnel drops. Logs live rent-free in
 | `TRUSTED_CERT` | — | pin a specific SHA-256; empty = fetch + pin the live cert at install |
 | `OPENFORTIVPN_BIN` | — | override binary path; empty = auto-detect |
 | `REALM` | — | SAML realm segment, if your gateway demands one |
+| `PERSISTENT_RECONNECT` | — | seconds between auto-reconnect attempts (default 25; 0 = off) |
+| `KEEPALIVE_INTERVAL` | — | ping through the tunnel every N s to dodge an idle timeout (0 = off) |
+| `KEEPALIVE_HOST` | — | keepalive target; empty = the tunnel's gateway peer |
 | `START_DELAY` / `RETRY_DELAY` / `MAX_RETRIES` | — | state-machine tuning |
 
 ---
@@ -178,6 +181,29 @@ Wi-Fi this tool exists for. Hard pass. 🙅
 deliberately Quit, it stays quit. It's self-healing but not clingy. Beats the
 "Launch at login" checkbox because it's scriptable, reversible, and shows up
 honestly in System Settings → General → Login Items.
+
+---
+
+## 🔁 staying *connected* (drops on Wi-Fi change / inactivity)
+
+Two different drop causes, two fixes — plus one hard limit:
+
+- **Wi-Fi change / transient drop →** `PERSISTENT_RECONNECT` (default `25`s). openfortivpn
+  reconnects on its own and **reuses the SAML cookie — no re-login** — until the gateway
+  expires it. (Note: the number is the retry *interval*, not a session lifetime; it already
+  loops forever, so keep it short.)
+- **Idle timeout →** `KEEPALIVE_INTERVAL` (e.g. `120`s). A small ping through the tunnel keeps
+  the session "active" so the gateway doesn't reap it for inactivity. openfortivpn sends no
+  keepalive of its own, so this is the lever. Only helps an *idle* timeout.
+- **Hard session cap (can't be beaten) →** when the gateway's max-session timer fires, the
+  cookie is dead and a fresh SAML SSO + MFA is **mandatory** — that's UCalgary IT policy, not
+  something the client can extend. When that happens, the watchdog notices the tunnel has been
+  down too long and **restarts for a fresh browser login** automatically (rather than looping
+  silently on a dead cookie).
+
+**Don't know your gateway's timeouts?** Measure: connect, `tail -f ~/Library/Logs/fortivpn-auto.log`,
+and time the drop — once left **idle**, once kept **active** (a steady `ping`). Idle-only drop ⇒
+set `KEEPALIVE_INTERVAL` under that; fixed wall-clock drop regardless ⇒ that's the hard cap.
 
 ---
 

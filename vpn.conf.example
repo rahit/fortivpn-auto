@@ -40,3 +40,27 @@ REALM=""
 # START_DELAY=3      # wait after SSID change before acting (DHCP settle)
 # RETRY_DELAY=30     # wait between connect retries
 # MAX_RETRIES=3      # give up after this many, until next network change
+
+# ── Staying connected ────────────────────────────────────────────────────────
+
+# Auto-reconnect: openfortivpn reconnects on drops (e.g. Wi-Fi changes), reusing
+# the SAML session cookie — no re-login — until the gateway expires it. This is
+# the SECONDS BETWEEN reconnect attempts, NOT a session lifetime; keep it short.
+# 0 disables persistence (one-shot connect, the old behaviour).
+PERSISTENT_RECONNECT=25
+
+# Keepalive against an idle timeout: every N seconds, send a ping through the
+# tunnel so the gateway doesn't consider the session idle. 0 disables it. Only
+# helps with an *idle* timeout — a hard session cap still forces a re-login
+# (that's a gateway policy you can't change from the client).
+KEEPALIVE_INTERVAL=0
+
+# Host to ping for keepalive. EMPTY = auto-detect the tunnel's gateway peer
+# (works generically). Set an internal-only host if your gateway ignores that.
+KEEPALIVE_HOST=""
+
+# How long the tunnel may stay down (in ACTIVE time — the clock pauses while your
+# Mac sleeps) before we force a fresh SAML login. Keep it comfortably LARGER than
+# PERSISTENT_RECONNECT so a transient drop (sleep, Wi-Fi handoff) recovers on its
+# own with the still-valid cookie instead of triggering an unnecessary re-login.
+RECONNECT_GRACE=180

@@ -28,7 +28,7 @@ obj.__index = obj
 
 -- Metadata
 obj.name     = "FortiVPNAuto"
-obj.version  = "1.0.0"
+obj.version  = "1.0.1"
 obj.author   = "Tahsin Rahit"
 obj.homepage = "https://github.com/rahit/fortivpn-auto"
 obj.license  = "MIT - https://opensource.org/licenses/MIT"
@@ -44,6 +44,10 @@ obj.maxRetries      = 3
 obj.retryDelay      = 30                              -- seconds between connect retries
 obj.startDelay      = 3                               -- seconds after SSID change (DHCP settle)
 obj.requestLocation = true                            -- trigger Location Services prompt on start
+obj.keepaliveInterval = 0                             -- ping every N s to dodge an idle timeout (0=off)
+obj.keepaliveHost     = ""                            -- "" = ping the tunnel's gateway peer
+obj.reconnectGrace    = 180                           -- s of ACTIVE downtime before forcing re-login (must be >> persistent interval)
+obj.monitorInterval   = 20                            -- s between health/keepalive checks
 
 -- ── State glyphs ─────────────────────────────────────────────────────────────
 local STATE_GLYPHS = {
@@ -145,6 +149,7 @@ function obj:_startVpnTask()
   self:_log("launching: sudo -n " .. self.binPath .. " -c " .. self.configPath .. " --saml-login")
   self._taskGen = (self._taskGen or 0) + 1
   local gen = self._taskGen   -- identity of THIS task; lets a stale exitCb no-op
+  self._everConnected = false -- per-task: reached "up" yet? (gates the watchdog)
   local samlOpened = false
 
   local function streamCb(_, stdout, stderr)
@@ -164,6 +169,8 @@ function obj:_startVpnTask()
         if line:find("Tunnel is up and running") then
           self:_setState("connected")
           self._retryCount = 0
+          self._everConnected = true
+          self._downTicks = 0
           self:_notify("VPN connected", "Routing through " .. (self._gatewayLabel or "the VPN") .. ".")
         elseif line:find("Gateway certificate validation failed") then
           self:_notify("VPN cert rotated",
@@ -181,6 +188,7 @@ function obj:_startVpnTask()
     if gen ~= self._taskGen then return end  -- superseded (e.g. force-reconnect) — ignore this exit
     self:_log(string.format("openfortivpn exited (code=%d)", exitCode or -1))
     self._vpnTask = nil
+    self:_stopMonitor()
     if self._state == "connected" then
       self:_setState("failed"); self:_scheduleRetry("tunnel dropped")
     elseif self._state == "connecting" or self._state == "probing" then
@@ -191,6 +199,7 @@ function obj:_startVpnTask()
   self._vpnTask = hs.task.new(self.sudoPath, exitCb, streamCb,
     { "-n", self.binPath, "-c", self.configPath, "--saml-login" })
   self._vpnTask:start()
+  self:_startMonitor()
 end
 
 function obj:_disconnect(reason)
@@ -199,6 +208,7 @@ function obj:_disconnect(reason)
   if self._retryTimer then self._retryTimer:stop(); self._retryTimer = nil end
   if self._startTimer then self._startTimer:stop(); self._startTimer = nil end
   if self._vpnTask then self._vpnTask:terminate(); self._vpnTask = nil end
+  self:_stopMonitor()
   self:_setState(self:_isTrusted(self:_currentSSID()) and "trusted" or "idle")
 end
 
@@ -246,11 +256,66 @@ function obj:_onWifiChange()
     return
   end
 
+  if self._vpnTask then
+    self:_log("non-trusted SSID changed; openfortivpn already running — letting it reconnect")
+    return
+  end
   self:_log("non-trusted SSID — connecting in " .. self.startDelay .. "s")
   self._startTimer = hs.timer.doAfter(self.startDelay, function()
     self._startTimer = nil
     self:_attemptConnect()
   end)
+end
+
+-- ── Connection monitor: keepalive + stuck-tunnel watchdog ────────────────────
+-- One timer. While ppp0 is up it sends a keepalive ping (defeats an idle
+-- timeout). If ppp0 stays down past reconnectGrace AFTER we'd connected — which
+-- is exactly how openfortivpn's --persistent loop looks when the SAML cookie
+-- has expired (it retries a dead cookie forever, silently, with no re-prompt) —
+-- we restart the process to force a fresh browser login.
+function obj:_startMonitor()
+  if self._monitorTimer then return end
+  self._downTicks = 0
+  self._monitorTimer = hs.timer.doEvery(self.monitorInterval, function() self:_monitorTick() end)
+end
+
+function obj:_stopMonitor()
+  if self._monitorTimer then self._monitorTimer:stop(); self._monitorTimer = nil end
+  self._downTicks = 0
+end
+
+function obj:_monitorTick()
+  hs.task.new("/sbin/ifconfig", function(code, out, _)
+    if code == 0 then
+      self._downTicks = 0
+      local peer = out and out:match("inet%s+%S+%s+%-%->%s+(%S+)")
+      if peer then self._peer = peer end
+      if (self.keepaliveInterval or 0) > 0 then
+        local now = os.time()
+        if (now - (self._lastPing or 0)) >= self.keepaliveInterval then
+          self._lastPing = now
+          local target = (self.keepaliveHost ~= "" and self.keepaliveHost) or self._peer
+          if target then
+            hs.task.new("/sbin/ping", nil, { "-c", "1", "-t", "3", target }):start()
+          end
+        end
+      end
+    elseif self._everConnected and self._vpnTask then
+      -- Count only AWAKE ticks (hs.timer pauses during sleep). This survives a
+      -- long sleep/outage without a false-fire: openfortivpn gets real awake
+      -- time to recover its still-valid cookie before we decide the session is
+      -- actually dead (stuck retrying an expired cookie) and force a fresh login.
+      self._downTicks = (self._downTicks or 0) + 1
+      local threshold = math.max(1, math.floor(self.reconnectGrace / self.monitorInterval))
+      if self._downTicks >= threshold then
+        self:_log(string.format(
+          "tunnel down ~%ds of active time — session likely expired; restarting for a fresh login",
+          self._downTicks * self.monitorInterval))
+        self._downTicks = 0
+        self:_forceConnect()
+      end
+    end
+  end, { "ppp0" }):start()
 end
 
 -- ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -262,6 +327,8 @@ function obj:start()
 
   self._state = "idle"; self._vpnTask = nil; self._retryCount = 0
   self._startTimer = nil; self._retryTimer = nil; self._taskGen = 0
+  self._monitorTimer = nil; self._downTicks = 0; self._everConnected = false
+  self._lastPing = 0; self._peer = nil
 
   -- macOS 14+ gates Wi-Fi SSID reads behind Location Services. Trigger the
   -- authorization prompt once; without it hs.wifi.currentNetwork() returns nil.
@@ -286,6 +353,7 @@ function obj:stop()
   if self._startTimer then self._startTimer:stop(); self._startTimer = nil end
   if self._wifiWatcher then self._wifiWatcher:stop(); self._wifiWatcher = nil end
   if self._vpnTask then self._vpnTask:terminate(); self._vpnTask = nil end
+  self:_stopMonitor()
   if self._menubar then self._menubar:delete(); self._menubar = nil end
   self:_log("== " .. self.name .. " stopped ==")
   if self._logHandle then self._logHandle:close(); self._logHandle = nil end

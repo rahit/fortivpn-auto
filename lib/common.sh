@@ -4,7 +4,7 @@
 
 # ── Identity / paths ─────────────────────────────────────────────────────────
 APP_NAME="fortivpn-auto"
-FVA_VERSION="1.0.0"
+FVA_VERSION="1.0.1"
 LA_LABEL="io.github.rahit.fortivpn-auto"
 SPOON_NAME="FortiVPNAuto"
 
@@ -85,6 +85,7 @@ load_config() {
   # Pre-declare so `set -u` is safe even if the file omits optionals.
   TRUSTED_SSIDS=(); TRUSTED_CERT=""; OPENFORTIVPN_BIN=""; REALM=""
   START_DELAY=""; RETRY_DELAY=""; MAX_RETRIES=""
+  PERSISTENT_RECONNECT="0"; KEEPALIVE_INTERVAL="0"; KEEPALIVE_HOST=""; RECONNECT_GRACE="180"
   # shellcheck disable=SC1090
   source "$f"
   : "${GATEWAY_HOST:?GATEWAY_HOST missing in $f}"
